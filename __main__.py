@@ -8,6 +8,8 @@ import pandas as pd
 import time
 import os
 import re
+import json
+from datetime import datetime
 
 def setup_driver():
     """Настройка браузера"""
@@ -37,6 +39,55 @@ def setup_driver():
         print(f"❌ Ошибка запуска браузера: {e}")
         return None
 
+def load_checked_urls():
+    """Загружает список уже проверенных URL из файла"""
+    checked_urls_file = "checked_urls.json"
+    checked_urls = set()
+    
+    if os.path.exists(checked_urls_file):
+        try:
+            with open(checked_urls_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                checked_urls = set(data.get('checked_urls', []))
+            print(f"📁 Загружено проверенных URL: {len(checked_urls)}")
+        except Exception as e:
+            print(f"⚠️ Ошибка загрузки checked_urls: {e}")
+    
+    return checked_urls
+
+def save_checked_urls(checked_urls):
+    """Сохраняет список проверенных URL в файл"""
+    checked_urls_file = "checked_urls.json"
+    try:
+        data = {
+            'checked_urls': list(checked_urls),
+            'last_update': datetime.now().isoformat(),
+            'total_checked': len(checked_urls)
+        }
+        with open(checked_urls_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        print(f"💾 Сохранено проверенных URL: {len(checked_urls)}")
+    except Exception as e:
+        print(f"❌ Ошибка сохранения checked_urls: {e}")
+
+def filter_new_videos(video_data, checked_urls):
+    """Фильтрует только новые видео, которые еще не проверялись"""
+    new_videos = []
+    already_checked = []
+    
+    for video in video_data:
+        if video['url'] in checked_urls:
+            already_checked.append(video)
+        else:
+            new_videos.append(video)
+    
+    print(f"📊 Фильтрация видео:")
+    print(f"   - Всего найдено: {len(video_data)}")
+    print(f"   - Уже проверено: {len(already_checked)}")
+    print(f"   - Новых для проверки: {len(new_videos)}")
+    
+    return new_videos
+
 def search_youtube_videos(driver, hashtag):
     """Поиск видео по хештегу"""
     try:
@@ -59,7 +110,7 @@ def search_youtube_videos(driver, hashtag):
         
         # Собираем ссылки на видео - ЛИМИТ 5 ВИДЕО
         video_data = []
-        videos = driver.find_elements(By.CSS_SELECTOR, "ytd-video-renderer")[:5]  # ⬅️ ЛИМИТ 5
+        videos = driver.find_elements(By.CSS_SELECTOR, "ytd-video-renderer")[:5]
         
         for video in videos:
             try:
@@ -83,16 +134,14 @@ def search_youtube_videos(driver, hashtag):
         return []
 
 def expand_description_element(driver):
-    """Раскрывает описание видео - находит кнопку по правильному селектору"""
+    """Раскрывает описание видео"""
     try:
         print("📖 Пытаюсь раскрыть описание...")
         
-        # Прокручиваем к области описания
         driver.execute_script("window.scrollTo(0, 500);")
         time.sleep(2)
         
         # 🔥 ПРАВИЛЬНЫЙ СЕЛЕКТОР ДЛЯ КНОПКИ "ЕЩЕ"
-        # Селектор 1: По ID (самый надежный)
         try:
             expand_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "tp-yt-paper-button#expand"))
@@ -100,13 +149,13 @@ def expand_description_element(driver):
             driver.execute_script("arguments[0].scrollIntoView();", expand_button)
             time.sleep(1)
             driver.execute_script("arguments[0].click();", expand_button)
-            print("✅ Кнопка 'Еще' нажата (по ID)")
+            print("✅ Кнопка 'Еще' нажата")
             time.sleep(2)
             return True
         except:
             pass
         
-        # Селектор 2: По классу и тексту
+        # Альтернативные способы поиска кнопки
         try:
             expand_buttons = driver.find_elements(By.CSS_SELECTOR, "tp-yt-paper-button")
             for button in expand_buttons:
@@ -114,22 +163,9 @@ def expand_description_element(driver):
                     driver.execute_script("arguments[0].scrollIntoView();", button)
                     time.sleep(1)
                     driver.execute_script("arguments[0].click();", button)
-                    print("✅ Кнопка 'Еще' нажата (по тексту)")
+                    print("✅ Кнопка 'Еще' нажата (альтернативный способ)")
                     time.sleep(2)
                     return True
-        except:
-            pass
-        
-        # Селектор 3: По XPath с текстом
-        try:
-            expand_buttons = driver.find_elements(By.XPATH, "//tp-yt-paper-button[contains(., 'еще') or contains(., 'Еще') or contains(., 'more') or contains(., 'More')]")
-            for button in expand_buttons:
-                driver.execute_script("arguments[0].scrollIntoView();", button)
-                time.sleep(1)
-                driver.execute_script("arguments[0].click();", button)
-                print("✅ Кнопка 'Еще' нажата (XPath)")
-                time.sleep(2)
-                return True
         except:
             pass
         
@@ -144,17 +180,13 @@ def get_description_text(driver):
     """Получает текст описания после раскрытия"""
     try:
         print("🔍 Получаю текст описания...")
-        
-        # Ждем немного после раскрытия
         time.sleep(3)
         
-        # Ищем описание в разных местах
         description_selectors = [
-            "#description",  # Основной селектор описания
-            "ytd-text-inline-expander",  # Блок с раскрытым текстом
-            ".ytd-video-secondary-info-renderer",  # Вторичная информация
-            "#content",  # Контент
-            "ytd-video-description-renderer"  # Рендерер описания
+            "#description",
+            "ytd-text-inline-expander",
+            ".ytd-video-secondary-info-renderer",
+            "ytd-video-description-renderer"
         ]
         
         for selector in description_selectors:
@@ -168,7 +200,7 @@ def get_description_text(driver):
             except:
                 continue
         
-        # Если не нашли в селекторах, пробуем получить весь видимый текст
+        # Если не нашли в селекторах
         try:
             body_text = driver.find_element(By.TAG_NAME, 'body').text
             if body_text and len(body_text) > 100:
@@ -189,25 +221,21 @@ def find_email_in_description(driver):
     try:
         print("🔎 Ищу email в описании...")
         
-        # Раскрываем описание
         description_expanded = expand_description_element(driver)
         
         if not description_expanded:
             print("⚠️ Не удалось раскрыть описание, пробую искать в доступном тексте...")
         
-        # Получаем текст описания
         description_text = get_description_text(driver)
         
         if not description_text:
             print("❌ Не удалось получить текст описания")
             return None
         
-        # Ищем email с помощью регулярного выражения
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         emails = re.findall(email_pattern, description_text)
         
         if emails:
-            # Берем первый найденный email
             found_email = emails[0]
             print(f"✅ Найден email: {found_email}")
             return found_email
@@ -219,7 +247,7 @@ def find_email_in_description(driver):
         print(f"❌ Ошибка поиска email: {e}")
         return None
 
-def process_video(driver, video_info):
+def process_video(driver, video_info, checked_urls):
     """Обрабатывает одно видео и ищет email"""
     try:
         print(f"\n🎬 Обрабатываю видео: {video_info['title'][:50]}...")
@@ -230,15 +258,21 @@ def process_video(driver, video_info):
         
         email = find_email_in_description(driver)
         
+        # 🔥 ДОБАВЛЯЕМ URL В ПРОВЕРЕННЫЕ ВНЕ ЗАВИСИМОСТИ ОТ РЕЗУЛЬТАТА
+        checked_urls.add(video_info['url'])
+        
         return {
             'video_url': video_info['url'],
             'video_title': video_info['title'],
             'email': email,
-            'found_date': time.strftime('%Y-%m-%d %H:%M:%S')
+            'found_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'checked_date': datetime.now().isoformat()
         }
         
     except Exception as e:
         print(f"❌ Ошибка обработки видео: {e}")
+        # Даже при ошибке отмечаем URL как проверенный
+        checked_urls.add(video_info['url'])
         return None
 
 def save_to_excel(new_data, filename="youtube_emails.xlsx"):
@@ -276,29 +310,26 @@ def save_to_excel(new_data, filename="youtube_emails.xlsx"):
         else:
             df_combined = df_new
         
-        # 🔥 СОХРАНЯЕМ В EXCEL
+        # Сохраняем в Excel
         df_combined.to_excel(filename, index=False, engine='openpyxl')
         saved_count = len(df_new) if not os.path.exists(filename) else len(df_new_unique)
         print(f"💾 Сохранено в {filename}: {saved_count} записей")
-        
-        # Показываем структуру файла
-        print(f"📊 Структура файла:")
-        print(f"   - Столбцы: {list(df_combined.columns)}")
-        print(f"   - Всего записей: {len(df_combined)}")
         
         return saved_count
         
     except Exception as e:
         print(f"❌ Ошибка сохранения: {e}")
-        print("💡 Установите библиотеку: pip install openpyxl")
         return 0
 
 def main():
     """Главная функция программы"""
-    print("=" * 60)
-    print("🎯 ПАРСЕР EMAIL С YOUTUBE")
-    print("📊 Лимит: 5 видео | Формат: Excel")
-    print("=" * 60)
+    print("=" * 70)
+    print("🎯 ПАРСЕР EMAIL С YOUTUBE - С СИСТЕМОЙ ОТСЛЕЖИВАНИЯ URL")
+    print("📊 Лимит: 5 видео | Отслеживание проверенных URL")
+    print("=" * 70)
+    
+    # Загружаем уже проверенные URL
+    checked_urls = load_checked_urls()
     
     hashtag = input("Введите хештег (например: #ragetypebeat): ").strip()
     if not hashtag:
@@ -317,37 +348,47 @@ def main():
             print("❌ Видео не найдены!")
             return
         
-        print(f"\n📹 Этап 2: Анализ {len(video_data)} видео (максимум 5)")
+        print(f"\n🔍 Этап 2: Фильтрация новых видео...")
+        new_videos = filter_new_videos(video_data, checked_urls)
+        
+        if not new_videos:
+            print("🎯 Все найденные видео уже проверены ранее!")
+            print("💡 Попробуйте другой хештег")
+            return
+        
+        print(f"\n📹 Этап 3: Анализ {len(new_videos)} новых видео")
         all_results = []
         
-        for i, video_info in enumerate(video_data, 1):
-            print(f"\n{'='*40}")
-            print(f"🎬 Видео {i} из {len(video_data)}")
-            print(f"{'='*40}")
-            result = process_video(driver, video_info)
+        for i, video_info in enumerate(new_videos, 1):
+            print(f"\n{'='*50}")
+            print(f"🎬 Видео {i} из {len(new_videos)}")
+            print(f"{'='*50}")
+            result = process_video(driver, video_info, checked_urls)
             if result:
                 all_results.append(result)
             time.sleep(2)
         
-        print(f"\n💾 Этап 3: Сохранение в Excel...")
+        print(f"\n💾 Этап 4: Сохранение результатов...")
+        
+        # Сохраняем email в Excel
         if all_results:
             saved_count = save_to_excel(all_results)
-            print(f"\n🎉 РАБОТА ЗАВЕРШЕНА!")
-            print(f"📊 Обработано видео: {len(video_data)}")
-            print(f"📧 Найдено email: {len([r for r in all_results if r['email']])}")
-            print(f"💾 Сохранено записей: {saved_count}")
-            print(f"📁 Файл: youtube_emails.xlsx")
-            
-            # Показываем пример данных
-            if saved_count > 0:
-                try:
-                    df = pd.read_excel("youtube_emails.xlsx")
-                    print(f"\n📋 Пример сохраненных данных:")
-                    print(df[['video_title', 'email']].tail(min(3, len(df))).to_string(index=False))
-                except:
-                    pass
         else:
-            print("\n❌ Ни одного email не найдено")
+            saved_count = 0
+        
+        # 🔥 СОХРАНЯЕМ ОБНОВЛЕННЫЙ СПИСОК ПРОВЕРЕННЫХ URL
+        save_checked_urls(checked_urls)
+        
+        print(f"\n🎉 РАБОТА ЗАВЕРШЕНА!")
+        print(f"📊 Статистика:")
+        print(f"   - Найдено видео: {len(video_data)}")
+        print(f"   - Новых для проверки: {len(new_videos)}")
+        print(f"   - Найдено email: {len([r for r in all_results if r['email']])}")
+        print(f"   - Сохранено записей: {saved_count}")
+        print(f"   - Всего проверено URL: {len(checked_urls)}")
+        print(f"📁 Файлы:")
+        print(f"   - Email: youtube_emails.xlsx")
+        print(f"   - Проверенные URL: checked_urls.json")
             
     except Exception as e:
         print(f"💥 Критическая ошибка: {e}")
