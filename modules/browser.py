@@ -6,18 +6,17 @@ import os
 def setup_driver():
     """Настройка браузера"""
     try:
-        from utils.config import CHROME_OPTIONS
-        
         options = webdriver.ChromeOptions()
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--log-level=3")
         
-        # Добавляем опции из конфига
-        for option in CHROME_OPTIONS:
-            if option:  # Пропускаем пустые строки
-                options.add_argument(option)
+        # РАСКОММЕНТИРУЙТЕ ДЛЯ ОКНА БРАУЗЕРА:
+        options.add_argument("--start-maximized")
         
         # Путь к драйверу
-        drivers_dir = os.path.join(os.path.dirname(__file__), '..', 'drivers')
-        driver_path = os.path.join(drivers_dir, 'chromedriver.exe')
+        driver_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'drivers', 'chromedriver.exe')
         
         if not os.path.exists(driver_path):
             print("❌ ChromeDriver не найден!")

@@ -1,7 +1,7 @@
 """Главный файл программы"""
 import time
 from modules.browser import setup_driver
-from modules.url_tracker import load_checked_urls, save_checked_urls, filter_new_videos
+from modules.url_tracker import load_checked_urls, save_checked_urls, filter_new_videos, is_video_processed, add_to_history
 from modules.youtube_searcher import search_youtube_videos
 from modules.email_extractor import process_video
 from modules.data_saver import save_to_excel
@@ -14,8 +14,9 @@ def main():
     print("📊 Лимит: 5 видео | Отслеживание проверенных URL")
     print("=" * 70)
     
-    # Загружаем уже проверенные URL
+    # Загружаем уже проверенные URL из файла (история всех запусков)
     checked_urls = load_checked_urls()
+    print(f"📁 Всего в истории: {len(checked_urls)} видео уже обработано в предыдущих запусках")
     
     hashtag = input("Введите хештег (например: #ragetypebeat): ").strip()
     if not hashtag:
@@ -34,12 +35,20 @@ def main():
             print("❌ Видео не найдены!")
             return
         
-        print(f"\n🔍 Этап 2: Фильтрация новых видео...")
+        print(f"\n🔍 Этап 2: Проверка истории предыдущих запусков...")
+        
+        # Фильтруем видео - оставляем только те, которых НЕТ в истории
         new_videos = filter_new_videos(video_data, checked_urls)
         
         if not new_videos:
-            print("🎯 Все найденные видео уже проверены ранее!")
+            print("\n🎯 Все найденные видео уже были обработаны в предыдущих запусках!")
             print("💡 Попробуйте другой хештег")
+            
+            stats = {
+                "Всего найдено": len(video_data),
+                "Всего в истории": len(checked_urls)
+            }
+            print_statistics("Статистика", stats)
             return
         
         print(f"\n📹 Этап 3: Анализ {len(new_videos)} новых видео")
@@ -49,9 +58,15 @@ def main():
             print(f"\n{'='*50}")
             print(f"🎬 Видео {i} из {len(new_videos)}")
             print(f"{'='*50}")
-            result = process_video(driver, video_info, checked_urls)
+            
+            # Обрабатываем видео
+            result = process_video(driver, video_info)
             if result:
                 all_results.append(result)
+                # Добавляем URL в историю после успешной обработки
+                add_to_history(video_info['url'], checked_urls)
+                print(f"✅ URL добавлен в историю обработанных видео")
+            
             time.sleep(2)
         
         print(f"\n💾 Этап 4: Сохранение результатов...")
@@ -61,24 +76,24 @@ def main():
         if all_results:
             saved_count = save_to_excel(all_results)
         
-        # Сохраняем обновленный список проверенных URL
+        # Сохраняем ОБНОВЛЕННУЮ историю всех обработанных видео
         save_checked_urls(checked_urls)
         
         # Выводим статистику
         print(f"\n🎉 РАБОТА ЗАВЕРШЕНА!")
         
         stats = {
-            "Найдено видео": len(video_data),
-            "Новых для проверки": len(new_videos),
-            "Найдено email": len([r for r in all_results if r['email']]),
+            "Найдено видео в этом поиске": len(video_data),
+            "Обработано новых видео": len(new_videos),
+            "Найдено email": len([r for r in all_results if r and r.get('email')]),
             "Сохранено записей": saved_count,
-            "Всего проверено URL": len(checked_urls)
+            "Всего в истории (после обновления)": len(checked_urls)
         }
-        print_statistics("Статистика", stats)
+        print_statistics("ФИНАЛЬНАЯ СТАТИСТИКА", stats)
         
         print(f"\n📁 Файлы:")
         print(f"   - Email: data/youtube_emails.xlsx")
-        print(f"   - Проверенные URL: data/checked_urls.json")
+        print(f"   - История просмотренных видео: data/checked_urls.json")
             
     except Exception as e:
         print(f"💥 Критическая ошибка: {e}")

@@ -3,8 +3,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
-from utils.config import MAX_VIDEOS, TIMEOUT
 import time
+
+MAX_VIDEOS = 5
+TIMEOUT = 15
 
 def search_youtube_videos(driver, hashtag):
     """Поиск видео по хештегу"""
@@ -41,7 +43,7 @@ def search_youtube_videos(driver, hashtag):
                         'url': video_url,
                         'title': video_title
                     })
-            except:
+            except Exception as e:
                 continue
         
         print(f"✅ Найдено видео: {len(video_data)}")

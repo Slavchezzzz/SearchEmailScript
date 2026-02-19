@@ -2,9 +2,15 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from utils.config import DESCRIPTION_SELECTORS, TIMEOUT
-from utils.helpers import extract_emails
+import re
 import time
+
+DESCRIPTION_SELECTORS = [
+    "#description",
+    "ytd-text-inline-expander",
+    ".ytd-video-secondary-info-renderer",
+    "ytd-video-description-renderer"
+]
 
 def expand_description_element(driver):
     """Раскрывает описание видео"""
@@ -14,7 +20,7 @@ def expand_description_element(driver):
         driver.execute_script("window.scrollTo(0, 500);")
         time.sleep(2)
         
-        # 🔥 ПРАВИЛЬНЫЙ СЕЛЕКТОР ДЛЯ КНОПКИ "ЕЩЕ"
+        # ПРАВИЛЬНЫЙ СЕЛЕКТОР ДЛЯ КНОПКИ "ЕЩЕ"
         try:
             expand_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "tp-yt-paper-button#expand"))
@@ -55,7 +61,7 @@ def get_description_text(driver):
         print("🔍 Получаю текст описания...")
         time.sleep(3)
         
-        # Используем селекторы из конфига
+        # Используем селекторы
         for selector in DESCRIPTION_SELECTORS:
             try:
                 elements = driver.find_elements(By.CSS_SELECTOR, selector)
@@ -83,21 +89,27 @@ def get_description_text(driver):
         print(f"❌ Ошибка получения текста: {e}")
         return ""
 
+def extract_emails(text):
+    """Извлекает email из текста"""
+    if not text:
+        return []
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    return re.findall(email_pattern, text)
+
 def find_email_in_description(driver):
-    """Ищет email в описании видео"""
     try:
         print("🔎 Ищу email в описании...")
-        
-        description_expanded = expand_description_element(driver)
-        
-        if not description_expanded:
-            print("⚠️ Не удалось раскрыть описание, пробую искать в доступном тексте...")
+        expanded = expand_description_element(driver)
+        print(f"📌 Описание раскрыто: {expanded}")
         
         description_text = get_description_text(driver)
         
         if not description_text:
             print("❌ Не удалось получить текст описания")
             return None
+        
+        # Выводим начало текста для проверки
+        print(f"📄 Первые 500 символов описания:\n{description_text[:500]}")
         
         emails = extract_emails(description_text)
         
@@ -113,9 +125,9 @@ def find_email_in_description(driver):
         print(f"❌ Ошибка поиска email: {e}")
         return None
 
-def process_video(driver, video_info, checked_urls):
+def process_video(driver, video_info):
     """Обрабатывает одно видео и ищет email"""
-    from utils.helpers import get_current_datetime
+    from datetime import datetime
     
     try:
         print(f"\n🎬 Обрабатываю видео: {video_info['title'][:50]}...")
@@ -126,19 +138,13 @@ def process_video(driver, video_info, checked_urls):
         
         email = find_email_in_description(driver)
         
-        # ДОБАВЛЯЕМ URL В ПРОВЕРЕННЫЕ ВНЕ ЗАВИСИМОСТИ ОТ РЕЗУЛЬТАТА
-        checked_urls.add(video_info['url'])
-        
         return {
             'video_url': video_info['url'],
             'video_title': video_info['title'],
             'email': email,
-            'found_date': get_current_datetime()['formatted'],
-            'checked_date': get_current_datetime()['iso']
+            'found_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
     except Exception as e:
         print(f"❌ Ошибка обработки видео: {e}")
-        # Даже при ошибке отмечаем URL как проверенный
-        checked_urls.add(video_info['url'])
         return None
