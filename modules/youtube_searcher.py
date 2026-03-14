@@ -5,11 +5,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 import time
 
-MAX_VIDEOS = 5
 TIMEOUT = 15
 
-def search_youtube_videos(driver, hashtag):
-    """Поиск видео по хештегу"""
+def search_youtube_videos(driver, hashtag, max_videos=5):
+    """Поиск видео по хештегу с параметром max_videos"""
     try:
         print("🌐 Открываю YouTube...")
         driver.get("https://www.youtube.com")
@@ -28,11 +27,20 @@ def search_youtube_videos(driver, hashtag):
         print("⏳ Жду результаты поиска...")
         time.sleep(5)
         
+        # Ждем загрузки результатов
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "ytd-video-renderer"))
+        )
+        
         # Собираем ссылки на видео
         video_data = []
-        videos = driver.find_elements(By.CSS_SELECTOR, "ytd-video-renderer")[:MAX_VIDEOS]
+        videos = driver.find_elements(By.CSS_SELECTOR, "ytd-video-renderer")
         
-        for video in videos:
+        print(f"📊 Всего видео на странице: {len(videos)}")
+        print(f"🎯 Будет взято: {max_videos} видео")
+        
+        # Берем только нужное количество
+        for video in videos[:max_videos]:
             try:
                 link_element = video.find_element(By.CSS_SELECTOR, "#video-title")
                 video_url = link_element.get_attribute("href")
@@ -43,10 +51,12 @@ def search_youtube_videos(driver, hashtag):
                         'url': video_url,
                         'title': video_title
                     })
+                    print(f"✅ Добавлено видео: {video_title[:50]}...")
             except Exception as e:
+                print(f"⚠️ Ошибка при парсинге видео: {e}")
                 continue
         
-        print(f"✅ Найдено видео: {len(video_data)}")
+        print(f"✅ Итого найдено видео: {len(video_data)}")
         return video_data
         
     except Exception as e:
