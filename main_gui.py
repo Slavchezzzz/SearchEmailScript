@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 import sys
 import os
@@ -252,6 +250,7 @@ class MainWindow(QMainWindow):
         elif msg_type == 'error':
             QMessageBox.critical(self, "Ошибка", data.get('message', ''))
             self.log_message(f"❌ ОШИБКА: {data.get('message', '')}")
+            self.log_message(f"❌ ChromeDriver не найден! Скачайте с: https://googlechromelabs.github.io/chrome-for-testing/ ❗Сохраните в: g:\работа\SearchEmail\SearchEmail\drivers\chromedriver.exe")
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
             self.status_label.setText("Ошибка")
