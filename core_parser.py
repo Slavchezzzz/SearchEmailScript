@@ -16,6 +16,8 @@ class ParserCore:
         self.is_running = False
         self.stop_requested = False
         self.checked_urls = set()
+        self.all_results = []  # Сохраняем все найденные результаты
+        self.driver = None
         
     def update_gui(self, data):
         """Отправка данных в GUI"""
@@ -29,6 +31,7 @@ class ParserCore:
             return
         
         self.stop_requested = False
+        self.all_results = []  # Очищаем результаты
         thread = threading.Thread(target=self._parse_thread, args=(hashtag, max_videos))
         thread.daemon = True
         thread.start()
@@ -37,11 +40,27 @@ class ParserCore:
         """Остановка парсера"""
         self.stop_requested = True
         self.update_gui({'type': 'log', 'message': '⏹️ Останавливаю парсер...'})
+        
+        # Немедленно сохраняем уже найденные результаты
+        self._save_current_results()
+    
+    def _save_current_results(self):
+        """Сохраняет текущие результаты при остановке"""
+        if self.all_results:
+            try:
+                saved_count = save_to_excel(self.all_results)
+                save_checked_urls(self.checked_urls)
+                self.update_gui({
+                    'type': 'log',
+                    'message': f"💾 При остановке сохранено {saved_count} новых email"
+                })
+            except Exception as e:
+                self.update_gui({'type': 'error', 'message': f'Ошибка сохранения: {str(e)}'})
     
     def _parse_thread(self, hashtag, max_videos):
         """Поток выполнения парсера"""
         self.is_running = True
-        driver = None
+        self.driver = None
         
         try:
             # Шаг 1: Загрузка истории
@@ -50,23 +69,25 @@ class ParserCore:
             self.update_gui({'type': 'log', 'message': f"📁 Загружено {len(self.checked_urls)} видео в истории"})
             
             if self.stop_requested:
+                self._save_current_results()
                 return
             
             # Шаг 2: Запуск браузера
             self.update_gui({'type': 'progress', 'value': 20, 'status': 'Запуск браузера...'})
-            driver = setup_driver()
-            if not driver:
+            self.driver = setup_driver()
+            if not self.driver:
                 self.update_gui({'type': 'error', 'message': 'Не удалось запустить браузер'})
                 return
             
             self.update_gui({'type': 'log', 'message': "✅ Браузер запущен"})
             
             if self.stop_requested:
+                self._save_current_results()
                 return
             
             # Шаг 3: Поиск видео
             self.update_gui({'type': 'progress', 'value': 30, 'status': f'Поиск видео...'})
-            video_data = search_youtube_videos(driver, hashtag, max_videos)
+            video_data = search_youtube_videos(self.driver, hashtag, max_videos)
             
             if not video_data:
                 self.update_gui({'type': 'error', 'message': 'Видео не найдены'})
@@ -75,6 +96,7 @@ class ParserCore:
             self.update_gui({'type': 'log', 'message': f"🔍 Найдено видео: {len(video_data)}"})
             
             if self.stop_requested:
+                self._save_current_results()
                 return
             
             # Шаг 4: Фильтрация новых видео
@@ -89,11 +111,14 @@ class ParserCore:
             
             # Шаг 5: Обработка видео
             total = len(new_videos)
-            all_results = []
+            processed_count = 0
+            found_count = 0
             
             for i, video_info in enumerate(new_videos, 1):
                 if self.stop_requested:
                     self.update_gui({'type': 'log', 'message': '⏹️ Парсинг остановлен пользователем'})
+                    # Сохраняем то, что уже нашли
+                    self._save_current_results()
                     break
                 
                 progress = 40 + int((i / total) * 50)
@@ -108,11 +133,12 @@ class ParserCore:
                     'message': f"\n🎬 [{i}/{total}] {video_info['title'][:60]}..."
                 })
                 
-                result = process_video(driver, video_info)
+                result = process_video(self.driver, video_info)
                 
                 if result and result.get('email'):
-                    all_results.append(result)
+                    self.all_results.append(result)
                     add_to_history(video_info['url'], self.checked_urls)
+                    found_count += 1
                     
                     self.update_gui({
                         'type': 'result',
@@ -128,6 +154,15 @@ class ParserCore:
                     add_to_history(video_info['url'], self.checked_urls)
                     self.update_gui({'type': 'log', 'message': "❌ Email не найден"})
                 
+                processed_count += 1
+                
+                # Каждые 5 видео показываем промежуточную статистику
+                if processed_count % 5 == 0:
+                    self.update_gui({
+                        'type': 'log',
+                        'message': f"📊 Промежуточно: обработано {processed_count}, найдено {found_count}"
+                    })
+                
                 time.sleep(2)
             
             if self.stop_requested:
@@ -137,8 +172,8 @@ class ParserCore:
             self.update_gui({'type': 'progress', 'value': 95, 'status': 'Сохранение результатов...'})
             
             saved_count = 0
-            if all_results:
-                saved_count = save_to_excel(all_results)
+            if self.all_results:
+                saved_count = save_to_excel(self.all_results)
                 self.update_gui({'type': 'log', 'message': f"💾 Сохранено email: {saved_count}"})
             else:
                 self.update_gui({'type': 'log', 'message': "📧 Email не найдены"})
@@ -150,19 +185,19 @@ class ParserCore:
             
             self.update_gui({
                 'type': 'log',
-                'message': f"\n🎉 Статистика:"
+                'message': f"\n🎉 СТАТИСТИКА:"
             })
             self.update_gui({'type': 'log', 'message': f"   • Всего видео: {len(video_data)}"})
             self.update_gui({'type': 'log', 'message': f"   • Обработано новых: {len(new_videos)}"})
-            self.update_gui({'type': 'log', 'message': f"   • Найдено email: {len(all_results)}"})
+            self.update_gui({'type': 'log', 'message': f"   • Найдено email: {len(self.all_results)}"})
             self.update_gui({'type': 'log', 'message': f"   • Сохранено: {saved_count}"})
             
         except Exception as e:
-            self.update_gui({'type': 'error', 'message': str(e)})
+            self.update_gui({'type': 'error', 'message': f'Ошибка: {str(e)}'})
             
         finally:
-            if driver:
-                driver.quit()
+            if self.driver:
+                self.driver.quit()
                 self.update_gui({'type': 'log', 'message': "🔒 Браузер закрыт"})
             
             self.is_running = False

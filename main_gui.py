@@ -68,7 +68,7 @@ class MainWindow(QMainWindow):
         # Количество видео
         top_layout.addWidget(QLabel("Макс. видео:"), 0, 2)
         self.max_videos_spin = QSpinBox()
-        self.max_videos_spin.setRange(1, 20)
+        self.max_videos_spin.setRange(1, 9999)
         self.max_videos_spin.setValue(5)
         top_layout.addWidget(self.max_videos_spin, 0, 3)
         
@@ -213,10 +213,24 @@ class MainWindow(QMainWindow):
         self.parser_thread.start()
     
     def stop_parsing(self):
-        """Остановка парсера"""
         if self.parser_thread and self.parser_thread.isRunning():
+            self.stop_btn.setEnabled(False)  # Отключаем кнопку стоп
+            self.status_label.setText("Останавливается...")
+            self.status_label.setStyleSheet("color: orange; font-weight: bold;")
+        
+            # Отправляем сигнал остановки
             self.parser_thread.stop()
-            self.log_message("⏹️ Остановка...")
+        
+            # Ждем немного и обновляем UI
+            QTimer.singleShot(1000, self._check_thread_stopped)
+
+    def _check_thread_stopped(self):
+        if not self.parser_thread or not self.parser_thread.isRunning():
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.status_label.setText("Остановлено")
+            self.status_label.setStyleSheet("color: red; font-weight: bold;")
+            self.log_message("✅ Парсер успешно остановлен")
     
     def handle_update(self, data):
         """Обработка обновлений от парсера"""
