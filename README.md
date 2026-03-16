@@ -180,7 +180,6 @@ YouTubeEmailParser/
 ├── main_gui.py              # Главный файл программы (GUI)
 ├── core_parser.py            # Ядро парсера
 ├── requirements.txt          # Список библиотек
-├── start.bat                 # Файл для быстрого запуска
 │
 ├── modules/                  # Модули программы
 │   ├── __init__.py
