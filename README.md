@@ -72,7 +72,7 @@ pip install openpyxl
 2. Скачайте ChromeDriver:
    - Перейдите на [страницу загрузки](https://chromedriver.chromium.org/downloads)
    - Выберите версию, соответствующую вашему Chrome
-   - Скачайте `chromedriver_win32.zip`
+   - Скачайте `chromedriver_win64.zip`
 
 3. Установите драйвер:
    - Распакуйте архив
